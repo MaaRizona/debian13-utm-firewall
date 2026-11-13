@@ -1,0 +1,18 @@
+source /etc/network/interfaces.d/*
+
+auto lo
+iface lo inet loopback
+
+# WAN (NAT z VirtualBoxa)
+auto enp0s3
+iface enp0s3 inet dhcp
+
+# LAN (Sieć wewnętrzna)
+auto enp0s8
+iface enp0s8 inet static
+    address 192.168.10.1/24
+
+# DMZ (Strefa zdemilitaryzowana)
+auto enp0s9
+iface enp0s9 inet static
+    address 10.0.100.1/24
