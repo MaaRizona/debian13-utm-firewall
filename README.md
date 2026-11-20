@@ -1,37 +1,17 @@
-# Open-Source UTM Firewall (Debian 13)
+# Debian 13 (Trixie) UTM Firewall & Router Gateway
 
-Projekt inżynierski realizowany na kierunku **Cyberbezpieczeństwo**. Celem pracy jest zaprojektowanie, wdrożenie oraz weryfikacja wielostrefowej zapory sieciowej klasy UTM (*Unified Threat Management*) opartej na systemie **Debian 13 (Trixie)**.
+Prototyp bramy sieciowej klasy UTM oparty na systemie **Debian GNU/Linux 13 (Trixie)**, realizujący funkcje routingu, translacji adresów NAT, lokalnych usług DHCP/DNS oraz stanowej filtracji pakietów z punktem integracji dla silnika Suricata IPS i centralnego logowania Grafana/Loki.
 
-## Architektura i Topologia Sieciowa
+## Architektura sieciowa (Hyper-V)
 
-System pełni funkcję routera brzegowego oraz stanowej zapory sieciowej, zapewniając izolację ruchu pomiędzy strefami bezpieczeństwa oraz szyfrowany dostęp administracyjny w modelu **Zero Trust**.
-
-| Interfejs | Strefa | Adresacja IP / Pula DHCP | Rola w systemie |
+| Interfejs | Strefa | Adresacja IP | Rola w systemie |
 | :--- | :--- | :--- | :--- |
-| `enp0s3` | **WAN** | DHCP (NAT Hypervisora) | Interfejs zewnętrzny (`policy drop`, otwarty wyłącznie port `51820/UDP` dla WireGuard) |
-| `enp0s8` | **LAN** | `192.168.10.1/24` (DHCP: `.50–.150`) | Zaufana sieć wewnętrzna (stacje robocze) |
-| `enp0s9` | **DMZ** | `10.0.100.1/24` (DHCP: `.50–.150`) | Izolowana strefa zdemilitaryzowana (brak możliwości inicjowania połączeń do LAN) |
-| `wg0` | **VPN** | `10.8.0.1/24` | Szyfrowany tunel administracyjny WireGuard (jedyny punkt wejścia SSH z zewnątrz) |
+| `eth0` | WAN (External) | `10.1.1.100/24` (DHCP) | Wyjście do sieci zewnętrznej, maskarada NAT, dostęp administracyjny SSH przez VPN |
+| `eth1` | LAN (Private) | `192.168.10.1/24` (Static) | Brama domyślna dla sieci lokalnej, serwer DHCP (`192.168.10.50–150`) oraz DNS |
 
-## Struktura Konfiguracji (Infrastructure as Code)
+## Struktura repozytorium
 
-* `interfaces` – statyczna i dynamiczna adresacja interfejsów sieciowych (`WAN`, `LAN`, `DMZ`).
-* `99-utm-security.conf` – parametry utwardzania (*hardeningu*) stosu sieciowego jądra Linux (`ip_forward`, `rp_filter`, `tcp_syncookies`, blokada `ICMP redirects`).
-* `nftables.conf` – stanowa filtracja pakietów w przestrzeni `inet`, translacja adresów NAT (`masquerade`), izolacja strefowa oraz przekierowanie ruchu do kolejki `NFQUEUE 0` (z flagą `bypass`) na potrzeby silnika IPS.
-* `utm-dhcp-dns.conf` – konfiguracja lokalnego serwera DHCP oraz resolvera DNS (`dnsmasq`), powiązanego wyłącznie z interfejsami wewnętrznymi.
-
-## Instrukcja Uruchomienia Środowiska (dla zespołu)
-
-1. Zaimportuj obraz bazowy `UTM-Gateway-Debian13-Base.ova` z dysku zespołowego OneDrive do Oracle VirtualBox.
-2. W ustawieniach sieciowych maszyny wirtualnej upewnij się, że:
-   * **Karta 1 (`enp0s3`):** tryb *NAT* z przekierowaniem portu **UDP `51820` -> `51820`**.
-   * **Karta 2 (`enp0s8`):** *Sieć wewnętrzna* (`net-lan`).
-   * **Karta 3 (`enp0s9`):** *Sieć wewnętrzna* (`net-dmz`).
-3. Zaimportuj dostarczony profil klienta (`client.conf`) do aplikacji WireGuard na hoście i aktywuj tunel.
-4. Połącz się z bramą przez SSH: `ssh trixie@10.8.0.1`.
-
-## Moduły Projektu i Podział Prac
-
-* **Core Networking, Firewall (`nftables`) & Zero Trust VPN (`WireGuard`):** Wdrożone w obrazie bazowym v1.0.
-* **Detekcja i Blokowanie Włamań (`Suricata IDS/IPS`):** Integracja z kolejką `NFQUEUE 0` *(w toku)*.
-* **Centralizacja Logów i Wizualizacja (`Grafana` + `Loki`):** Zbieranie zdarzeń jądra oraz alertów IPS *(w toku)*.
+* `interfaces` (`/etc/network/interfaces`) — konfiguracja statycznej adresacji interfejsu wewnętrznego `eth1`.
+* `99-utm-security.conf` (`/etc/sysctl.d/99-utm-security.conf`) — włączenie przekazywania pakietów (`ip_forward = 1`) oraz utwardzanie stosu sieciowego jądra (`rp_filter`, `tcp_syncookies`, blokada ICMP Redirect).
+* `utm-dhcp-dns.conf` (`/etc/dnsmasq.d/utm-dhcp-dns.conf`) — serwer DHCP i resolver DNS powiązany wyłącznie z interfejsem `eth1` (`bind-interfaces`).
+* `nftables.conf` (`/etc/nftables.conf`) — stanowa zapora sieciowa (`policy drop`), maskarada SNAT na `eth0`, logowanie odrzuconych pakietów (`NFT-INPUT-DROP`, `NFT-FORWARD-DROP`) oraz kolejka `NFQUEUE 0 bypass` dla modułu Suricata IPS.
